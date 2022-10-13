@@ -3,6 +3,7 @@ Aqui estarão uma lista de projetos pessoais que eu não pretendo compartilhar c
 
 ## Projetos Planejados 
 - Conectar ao Nyaa diretamente pelo terminal, podendo navegar e baixar torrentão pelo terminal
+- Criar um programa que baixa as imagens da kohaku automaticamente
 
 ## Projetos Realizados
 - Kkkkkkkkkk
