@@ -1,7 +1,9 @@
+#include<Wire.h>
 const int MPU_addr=0x68; //Endereço do sensor
-float newAcc=0, compFreq;
-int riseCounter=0;
-unsigned long = newTime=0;
+float newAcc=0; // usado em compressionCount()
+int riseCounter=0,compCounter=0; //usados em compressionCount()
+unsigned long compStartTime=0, compEndTime=0; //usados em compressionCount()
+double compFreq=0,compPeriod=0; //usado em compressionCount()
 
 void setup(){
   Wire.begin(); //Inicia a comunicação I2C
@@ -21,6 +23,7 @@ void setup(){
   Wire.write(0x1A);
   Wire.write(0x04);
   Wire.endTransmission(true);*/
+
   Serial.begin(115200); //Inicia a comunicaçao serial (para exibir os valores lidos)
   delay(5000); //delay de 5 segundos antes do programa iniciar para que o teste possa ser arrumado antes do início do programa
 }
@@ -28,14 +31,18 @@ void setup(){
 void loop(){
   float acc;
   acc = collectAcc();
-  compFreq = testForFreq(acc);
+  compressionCount(acc);
+
+
+
   
-  Serial.print(micros()); Serial.print(";"); Serial.print(AcZreal); Serial.print(";"); Serial.print(compFreq);  Serial.println("");
+  Serial.print(compCounter); Serial.print(";"); Serial.print(compPeriod); Serial.print(";"); Serial.println(compFreq);
+  //Serial.print(millis()); Serial.print(";"); Serial.print(acc); Serial.print(";"); Serial.println(compFreq);
   
   delay(7);
 }
 
-int collectAcc() {
+float collectAcc() {
   int16_t rawAcc; //Variaveis para pegar os valores medidos
   float gAcc; //Variável para armazenar o valor real de aceleração
   
@@ -49,29 +56,25 @@ int collectAcc() {
   return gAcc;
 }
 
-int testForFreq(float acc) {
-  bool risingCheck=false;
-  unsigned long compressionTime;
-  int compressionFreq;
-  
-  if(abs(acc)>11) {
-    float oldAcc = newAcc;
-    newAcc = acc;
-    
-    if(newAcc>oldAcc) {
-      riseCounter++;
-      risingCheck = (riseCounter>3) ? true : false;
-      if(risingCheck) {
-        unsigned long oldTime = newTime;
-        newTime = millis();
-        
-        compressionTime = newTime-oldTime;
-        compressionFreq = compressionTime*60000; // extrapolando o tempo de compressão de millisegundos para minutos 
-      }
-    } else {
-      riseCounter=0;
-    }  
+void compressionCount(float acc) {    
+  float oldAcc = newAcc;
+  newAcc = acc;
+
+  if(newAcc>oldAcc && riseCounter>3) {
+    riseCounter=0;
+    compCounter++;
+    if(compCounter==1){
+      compStartTime=millis();
+    }
+    if(compCounter==10){
+      compEndTime=millis();
+      compCounter=0;
+      compPeriod = (double)(compEndTime - compStartTime);
+      compFreq = (double)(600000/compPeriod);
+    }
+  } 
+
+  if(newAcc<oldAcc && abs(newAcc)>11) {
+    riseCounter++;
   }
-  
-  return compressionFreq;
 }
