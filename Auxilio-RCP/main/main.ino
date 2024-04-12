@@ -6,10 +6,10 @@ bool compStart=0; // Tracks start of compressions
 float acceleration[accCollectionLimit]={}; // acceleration values collected over time.
 float accTrend=0, velTrend=0; // trend is used for detrending
 float compressionDepth=0; // stores depth of compression 
-int i=0; // used for passing values to the acceleration array
+int measurementCounter=0; // used for passing values to the acceleration array
 int riseCounter=0,compCounter=0; // riseCounter tracks downwars movement of acceleration, compCounter tracks amount of compressions made
 unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
-unsigned long time[accCollectionLimit]={}; // acceleration values collected over time.
+unsigned long time[accCollectionLimit]={}; // time of collected acceleration value
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
 
 void setup(){
@@ -31,26 +31,27 @@ void setup(){
 
   // Measuring the average accelerometer readings during rest.
   int i=0;
-  double accSum=0;
   do {
+    acceleration[i] = collectAcc();
     i++;
-    accSum += collectAcc();
-  }while(millis()<10000);
-  accTrend = accSum/i;
+  }while(i<=500); // stops after measuring 500 values]
+  accTrend = trendCalc(500,acceleration);
+  //memset(acceleration,0,sizeof(acceleration)); // resetta todos os valores do array. Nao e necessario, mas...
 
   Serial.print("Trend calculada:"); Serial.println(accTrend); // For initial test purposes only
 }
 
 void loop(){  
-  acceleration[i]= collectAcc()-accTrend;
-  time[i]=millis();
+  acceleration[measurementCounter]= collectAcc();
+  time[measurementCounter]=millis();
   compressionCount(); // Tracks compressions based on collected and detrended acceleration values
-  i++;
-  if(i>=(accCollectionLimit-1)) {
-    i=0;
+  measurementCounter++;
+  if(measurementCounter>=(accCollectionLimit-1)) {
+    measurementCounter=0;
     compCounter=0;
     riseCounter=0;
     //compressionDepth = depthMeasure();
+    //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
   } 
   
   
@@ -75,8 +76,8 @@ float collectAcc() {
 }
 
 void compressionCount() {
-  float oldAcc = (i>0) ? acceleration[i-1] : acceleration[accCollectionLimit-1]; 
-  float newAcc=acceleration[i];
+  float oldAcc = (measurementCounter>0) ? acceleration[measurementCounter-1] : acceleration[accCollectionLimit-1]; 
+  float newAcc=acceleration[measurementCounter];
 
   if(newAcc>oldAcc && riseCounter>3) { //Tracks the lowest point of acceleration
     riseCounter=0;
@@ -93,11 +94,37 @@ void compressionCount() {
     }
   } 
 
-  if(newAcc<oldAcc && abs(newAcc)>1) { // Tracks downwards movement as long as the acceleration is higher than 1m/s²
+  if(newAcc<oldAcc && abs(newAcc)>11) { // Tracks downwards movement as long as the acceleration is higher than 1m/s²
     riseCounter++;
   }
 }
 
 float depthMeasure() {
+  int timeDelta[accCollectionLimit]={};
+  float acc5PointMovingAvg[accCollectionLimit]={};
 
+  for(int i=1;i<=accCollectionLimit;i++) {
+
+    timeDelta[i]=time[i]-time[i-1]; // Calculates time between measurements
+
+    if(i>4) { // Applies a 5 point moving average
+      acc5PointMovingAvg[i]=(acceleration[i-2]+acceleration[i-1]+acceleration[i]+acceleration[i+1]+acceleration[i+2])/5;
+    } else {
+      acc5PointMovingAvg[i]=acceleration[i];
+    }
+
+
+  }
+
+}
+
+float trendCalc(int stoppingMeasurement, float measurement[]) {
+  double sum=0;
+  float trend=0;
+  for(int i = 0;i<stoppingMeasurement;i++) {
+    sum += measurement[i];
+  }
+
+  trend = sum/stoppingMeasurement;
+  return trend;
 }
