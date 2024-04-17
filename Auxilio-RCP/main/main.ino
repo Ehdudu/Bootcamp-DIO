@@ -2,14 +2,14 @@
 const int MPU_addr=0x68; // Accelerometer's I2C address
 const int accCollectionLimit=1000; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
 const int compLimit=25; // defines the amount of compressions necessary for the compression frequency to be calculated
-bool compStart=0; // Tracks start of compressions
 float acceleration[accCollectionLimit]={}; // acceleration values collected over time.
 float accTrend=0, velTrend=0; // trend is used for detrending
 float compressionDepth=0; // stores depth of compression 
 int measurementCounter=0; // used for passing values to the acceleration array
-int riseCounter=0,compCounter=0; // riseCounter tracks downwars movement of acceleration, compCounter tracks amount of compressions made
+int compCounter=0; // compCounter tracks amount of compressions made
+int riseCounter=0; // riseCounter is used for tracking the movement of a graph similar to a senoid, being used to identify the moment it stops rising and starts a downwards trend.
 unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
-unsigned long time[accCollectionLimit]={}; // time of collected acceleration value
+unsigned long collectAccTime[accCollectionLimit]={}; // time of collected acceleration value
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
 
 void setup(){
@@ -43,7 +43,7 @@ void setup(){
 
 void loop(){  
   acceleration[measurementCounter]= collectAcc();
-  time[measurementCounter]=millis();
+  collectAccTime[measurementCounter]=millis();
   compressionCount(); // Tracks compressions based on collected and detrended acceleration values
   measurementCounter++;
   if(measurementCounter>=(accCollectionLimit-1)) {
@@ -79,8 +79,7 @@ void compressionCount() {
   float oldAcc = (measurementCounter>0) ? acceleration[measurementCounter-1] : acceleration[accCollectionLimit-1]; 
   float newAcc=acceleration[measurementCounter];
 
-  if(newAcc>oldAcc && riseCounter>3) { //Tracks the lowest point of acceleration
-    riseCounter=0;
+  if(periodStartCheck(oldAcc,newAcc,11)) { // periodStartCheck monitors when a period starts, which means it'll activate every time a compression movement is fully completed. the detection treshold has been tested, and upon empirical analysis, 11 m/s² was defined as the best number to guarantee noise doesn't cause errors 
     compCounter++;
     if(compCounter==1){ // aumentar as condições de compcounter para evitar que no começo do programa ele pegue movimentação e interprete como compressão
       compStartTime=millis();
@@ -88,15 +87,11 @@ void compressionCount() {
     if(compCounter==compLimit){
       compEndTime=millis();
       compCounter=0;
-      compStart=1;
-      double compPeriod = (double)(compEndTime - compStartTime); //testar se precisa ser um double ou se pode ser outro valor
+      double compPeriod = (double)(compEndTime - compStartTime);
       compFreq = (double)(600000/compPeriod);
     }
-  } 
-
-  if(newAcc<oldAcc && abs(newAcc)>11) { // Tracks downwards movement as long as the acceleration is higher than 1m/s²
-    riseCounter++;
   }
+
 }
 
 float depthMeasure() {
@@ -105,9 +100,9 @@ float depthMeasure() {
 
   for(int i=1;i<=accCollectionLimit;i++) {
 
-    timeDelta[i]=time[i]-time[i-1]; // Calculates time between measurements
+    timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
 
-    if(i>4) { // Applies a 5 point moving average
+    if(i>4) { // Applies a 5 point moving average on the collected acceleration values
       acc5PointMovingAvg[i]=(acceleration[i-2]+acceleration[i-1]+acceleration[i]+acceleration[i+1]+acceleration[i+2])/5;
     } else {
       acc5PointMovingAvg[i]=acceleration[i];
@@ -116,6 +111,21 @@ float depthMeasure() {
 
   }
 
+}
+
+bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
+  bool periodStart = false;
+
+  if(newValue<oldValue && abs(newValue)>detectionTreshold) { // Tracks movement as long as the collected value is higher than the defined treshold
+    riseCounter++;
+  }
+
+  if(newValue>oldValue && riseCounter>3) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
+    periodStart = true;
+    riseCounter=0;
+  }
+
+  return periodStart;
 }
 
 float trendCalc(int stoppingMeasurement, float measurement[]) {
