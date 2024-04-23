@@ -8,6 +8,7 @@ float compressionDepth=0; // stores depth of compression
 int measurementCounter=0; // used for passing values to the acceleration array
 int compCounter=0; // compCounter tracks amount of compressions made
 int riseCounter=0; // riseCounter is used for tracking the movement of a graph similar to a senoid, being used to identify the moment it stops rising and starts a downwards trend.
+int startingPoint=0; // This will be used to keep track of when the first compression started, so a trend can be calculated later
 unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
 unsigned long collectAccTime[accCollectionLimit]={}; // time of collected acceleration value
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
@@ -50,6 +51,7 @@ void loop(){
     measurementCounter=0;
     compCounter=0;
     riseCounter=0;
+    startingPoint=0;
     //compressionDepth = depthMeasure();
     //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
   } 
@@ -96,20 +98,16 @@ void compressionCount() {
 
 float depthMeasure() {
   int timeDelta[accCollectionLimit]={};
-  float acc5PointMovingAvg[accCollectionLimit]={};
+  float acc5PointMovingAvg[accCollectionLimit]={}, accOffset[accCollectionLimit]={};
   float accTrend=0;
+
+  movingAverage(acc5PointMovingAvg,acceleration,5,accCollectionLimit);
+  accTrend = trendCalc(startingPoint-100,acc5PointMovingAvg); // 100 is an arbitrary value. It is used so that the inicial decline of the slope isn't taken in account during trend calculation.
+  
   for(int i=1;i<accCollectionLimit;i++) {
-
     timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
-
-    if(i>4) { // Applies a 5 point moving average on the collected acceleration values
-      acc5PointMovingAvg[i]=(acceleration[i-2]+acceleration[i-1]+acceleration[i]+acceleration[i+1]+acceleration[i+2])/5;
-    } else {
-      acc5PointMovingAvg[i]=acceleration[i];
-    }
+    accOffset[i]=accOffset[i]-accTrend;
   }
-  accTrend = trendCalc(accCollectionLimit,acc5PointMovingAvg);
-
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -121,6 +119,9 @@ bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
 
   if(newValue>oldValue && riseCounter>3) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
     periodStart = true;
+    if(startingPoint==0) { // This will be used to keep track of when the first compression started, so a trend can be calculated later
+      startingPoint=measurementCounter;
+    }
     riseCounter=0;
   }
 
@@ -138,9 +139,19 @@ float trendCalc(int stoppingMeasurement, float measurement[]) {
   return trend;
 }
 
-float integralCalculator(float data[], float period[]) {
-  float integral[accCollectionLimit]={};
-  for(int i=1;i<accCollectionLimit;i++) {
+void integralCalculator(float *integral, float *data, float *period,int stoppingMeasurement) {
+  integral[stoppingMeasurement]={};
+  for(int i=1;i<stoppingMeasurement;i++) {
     integral[i]=(((data[i-1]+data[i])*(period[i]/1000))/2)+integral[i-1]; // calculates que area between two points (an integral). THe period is divided by 1000 to convert from ms to s
+  }
+}
+
+void movingAverage(float *avg,float *data,int numOfPoints,int stoppingMeasurement) {
+  for(int i=0;i<stoppingMeasurement;i++) {
+    if(i>numOfPoints) {
+      avg[i]=(data[i-2]+data[i-1]+data[i]+data[i+1]+data[i+2])/5;
+    } else {
+      avg[i]=data[i];
+    }
   }
 }
