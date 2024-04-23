@@ -97,8 +97,8 @@ void compressionCount() {
 float depthMeasure() {
   int timeDelta[accCollectionLimit]={};
   float acc5PointMovingAvg[accCollectionLimit]={};
-
-  for(int i=1;i<=accCollectionLimit;i++) {
+  float accTrend=0;
+  for(int i=1;i<accCollectionLimit;i++) {
 
     timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
 
@@ -107,9 +107,8 @@ float depthMeasure() {
     } else {
       acc5PointMovingAvg[i]=acceleration[i];
     }
-
-
   }
+  accTrend = trendCalc(accCollectionLimit,acc5PointMovingAvg);
 
 }
 
@@ -137,4 +136,11 @@ float trendCalc(int stoppingMeasurement, float measurement[]) {
 
   trend = sum/stoppingMeasurement;
   return trend;
+}
+
+float integralCalculator(float data[], float period[]) {
+  float integral[accCollectionLimit]={};
+  for(int i=1;i<accCollectionLimit;i++) {
+    integral[i]=(((data[i-1]+data[i])*(period[i]/1000))/2)+integral[i-1]; // calculates que area between two points (an integral). THe period is divided by 1000 to convert from ms to s
+  }
 }
