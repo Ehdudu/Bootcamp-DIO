@@ -47,13 +47,13 @@ void loop(){
   collectAccTime[measurementCounter]=millis();
   compressionCount(); // Tracks compressions based on collected and detrended acceleration values
   measurementCounter++;
-  if(measurementCounter>=(accCollectionLimit-1)) {
+  if(measurementCounter>=accCollectionLimit) {
+    //compressionDepth = depthMeasure();
+    //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
     measurementCounter=0;
     compCounter=0;
     riseCounter=0;
     startingPoint=0;
-    //compressionDepth = depthMeasure();
-    //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
   } 
   
   
@@ -96,18 +96,31 @@ void compressionCount() {
 
 }
 
-float depthMeasure() {
+float depthMeasure() { // To do: moving average of 121 points and detrend the displacement based on that moving average. Calculate amplitude by subtracting the lowest point from the highest point.
   int timeDelta[accCollectionLimit]={};
   float acc5PointMovingAvg[accCollectionLimit]={}, accOffset[accCollectionLimit]={};
-  float accTrend=0;
+  float velocity[accCollectionLimit]={},velOffset[accCollectionLimit]={};
+  float displacement[accCollectionLimit]={};
+  float accTrend=0, velTrend=0;
 
-  movingAverage(acc5PointMovingAvg,acceleration,5,accCollectionLimit);
-  accTrend = trendCalc(startingPoint-100,acc5PointMovingAvg); // 100 is an arbitrary value. It is used so that the inicial decline of the slope isn't taken in account during trend calculation.
+  movingAverage(acc5PointMovingAvg,acceleration,5); // Calculated a moving average of the acceleration in order to reduce noise
+
+  accTrend = trendCalc(startingPoint-100,acc5PointMovingAvg); // Calculates the noise trend before compressions start. 100 is an arbitrary value, used so to make sure that the first slope decline isn't included in the trend calculation.
   
   for(int i=1;i<accCollectionLimit;i++) {
     timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
-    accOffset[i]=accOffset[i]-accTrend;
+    accOffset[i]=accOffset[i]-accTrend; // detrends acceleration
   }
+  integralCalculator(velocity,accOffset,timeDelta); // Calculates the velocity, which is the integral of the acceleration
+
+  velTrend=trendCalc(startingPoint-100,velocity); // Calculates the noise trend in the velocity.
+  for(int i=1;i<accCollectionLimit;i++) {
+    velOffset[i]=velOffset[i]-velTrend; // detrends velocity
+  }
+
+  integralCalculator(displacement,velOffset,timeDelta); // Calculates displacement, which is the integral of the velocity
+
+
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -139,19 +152,24 @@ float trendCalc(int stoppingMeasurement, float measurement[]) {
   return trend;
 }
 
-void integralCalculator(float *integral, float *data, float *period,int stoppingMeasurement) {
+void integralCalculator(float *integral, float *data, int *period) {
+  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+
   integral[stoppingMeasurement]={};
   for(int i=1;i<stoppingMeasurement;i++) {
     integral[i]=(((data[i-1]+data[i])*(period[i]/1000))/2)+integral[i-1]; // calculates que area between two points (an integral). THe period is divided by 1000 to convert from ms to s
   }
 }
 
-void movingAverage(float *avg,float *data,int numOfPoints,int stoppingMeasurement) {
+void movingAverage(float *avg,float *data,int period) {
+  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+  float sum=0.0;
+  int halfPeriod = (period-1)/2;
+
   for(int i=0;i<stoppingMeasurement;i++) {
-    if(i>numOfPoints) {
-      avg[i]=(data[i-2]+data[i-1]+data[i]+data[i+1]+data[i+2])/5;
-    } else {
-      avg[i]=data[i];
+    for(int j=i-halfPeriod;j<=i+halfPeriod || j<0;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
+      sum += data[j];
     }
+    avg[i]=sum/period;
   }
 }
