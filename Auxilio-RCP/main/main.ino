@@ -46,19 +46,21 @@ void loop(){
   acceleration[measurementCounter]= collectAcc();
   collectAccTime[measurementCounter]=millis();
   compressionCount(); // Tracks compressions based on collected and detrended acceleration values
-  measurementCounter++;
+
   if(measurementCounter>=accCollectionLimit) {
-    //compressionDepth = depthMeasure();
+    compressionDepth = depthMeasure();
     //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
     measurementCounter=0;
     compCounter=0;
     riseCounter=0;
     startingPoint=0;
-  } 
-  
-  
-  //Serial.print(millis()); Serial.print(" ; "); Serial.print(acc); Serial.print(" ; "); Serial.print(compCounter); Serial.print(" ; "); Serial.print(compPeriod); Serial.print(" ; "); Serial.println(compFreq);
-  
+  }
+  Serial.print(millis()); Serial.print(" ; ");
+  Serial.print(acceleration[measurementCounter]); Serial.print(" ; ");
+  Serial.print(compFreq); Serial.print(" ; ");
+  Serial.print(compressionDepth); Serial.print(" ; ");
+
+  measurementCounter++;
   delay(7);
 }
 
@@ -100,7 +102,9 @@ float depthMeasure() { // To do: moving average of 121 points and detrend the di
   int timeDelta[accCollectionLimit]={};
   float acc5PointMovingAvg[accCollectionLimit]={}, accOffset[accCollectionLimit]={};
   float velocity[accCollectionLimit]={},velOffset[accCollectionLimit]={};
-  float displacement[accCollectionLimit]={};
+  float displacement[accCollectionLimit]={}, disp121PointMovingAvg[accCollectionLimit]={},dispInCentimeters[accCollectionLimit]={};
+  float maxValue[accCollectionLimit]={}, minValue[accCollectionLimit]={};
+  float amplitude[accCollectionLimit]={}, avgAmplitude[accCollectionLimit]={};
   float accTrend=0, velTrend=0;
 
   movingAverage(acc5PointMovingAvg,acceleration,5); // Calculated a moving average of the acceleration in order to reduce noise
@@ -119,8 +123,22 @@ float depthMeasure() { // To do: moving average of 121 points and detrend the di
   }
 
   integralCalculator(displacement,velOffset,timeDelta); // Calculates displacement, which is the integral of the velocity
+  movingAverage(disp121PointMovingAvg,displacement,121);
+  for(int i=0;i<accCollectionLimit;i++) {
+    dispInCentimeters[i]=(displacement[i]-disp121PointMovingAvg[i])*100;
+  }
+  getMax(maxValue,dispInCentimeters,61);
+  getMin(minValue,dispInCentimeters,61);
+  for(int i=0;i<accCollectionLimit;i++) {
+    amplitude[i]=maxValue[i]-minValue[i];
+  }
 
-
+  movingAverage(avgAmplitude,amplitude,250);
+  double sum=0;
+  for(int i=126;i>125 && i<876;i++) { // this is calculating the average amplitude, but only of the points affected by the moving average. 
+    sum += avgAmplitude[i];
+  }
+  return (sum/751); // 751 comes from the fact the amplitude average calculated right above sums 751 numbers.
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -167,9 +185,39 @@ void movingAverage(float *avg,float *data,int period) {
   int halfPeriod = (period-1)/2;
 
   for(int i=0;i<stoppingMeasurement;i++) {
-    for(int j=i-halfPeriod;j<=i+halfPeriod || j<0;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
+    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0 || i+halfPeriod>stoppingMeasurement;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
       sum += data[j];
     }
-    avg[i]=sum/period;
+    avg[i]= (i+halfPeriod>stoppingMeasurement || i-halfPeriod<0) ? sum/period : data[i];
+  }
+}
+
+void getMax(float *maximum, float *Data,int period) {
+  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+  int halfPeriod = (period-1)/2;
+
+  for(int i=0;i<stoppingMeasurement;i++) {
+    float max=0; // the reason max is created every iteration is that so the maxium of one iteration does not carry over to the next one, to avoid that the maximum value detected isn't actually one from a previous iteration that isn't covered by the current one
+    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0;j++) { 
+      if(data[j]>max) {
+        max = data[j];
+      }
+    }
+    maximum[i]=max;
+  }
+}
+
+void getMin(float *mainimum, float *Data,int period) {
+  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+  int halfPeriod = (period-1)/2;
+
+  for(int i=0;i<stoppingMeasurement;i++) {
+    float min=9999;
+    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0;j++) { 
+      if(data[j]<min) {
+        min = data[j];
+      }
+    }
+    minimum[i]=min;
   }
 }
