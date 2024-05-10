@@ -188,7 +188,7 @@ void movingAverage(float *avg,float *data,int period) {
     for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0 || i+halfPeriod>stoppingMeasurement;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
       sum += data[j];
     }
-    avg[i]= (i+halfPeriod>stoppingMeasurement || i-halfPeriod<0) ? sum/period : data[i];
+    avg[i]= (i+halfPeriod>stoppingMeasurement || i-halfPeriod<0) ? data[i] : sum/period;
   }
 }
 
