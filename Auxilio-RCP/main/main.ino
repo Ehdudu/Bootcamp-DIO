@@ -3,7 +3,6 @@ const int MPU_addr=0x68; // Accelerometer's I2C address
 const int accCollectionLimit=1000; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
 const int compLimit=25; // defines the amount of compressions necessary for the compression frequency to be calculated
 float acceleration[accCollectionLimit]={}; // acceleration values collected over time.
-float accTrend=0, velTrend=0; // trend is used for detrending
 float compressionDepth=0; // stores depth of compression 
 int measurementCounter=0; // used for passing values to the acceleration array
 int compCounter=0; // compCounter tracks amount of compressions made
@@ -13,6 +12,8 @@ unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instan
 unsigned long collectAccTime[accCollectionLimit]={}; // time of collected acceleration value
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
 
+
+// A FAZER: As trends só devem ser calculadas uma vez por programa para permitir que o mesmo rode continuamente. O valor de startingPoint deve ser levado em conta na hora de obter a amplitude do movimento.
 void setup(){
   Wire.begin(); // Starts I2C communication
   Wire.beginTransmission(MPU_addr); 
@@ -27,19 +28,8 @@ void setup(){
   Wire.endTransmission(true);
 
   Serial.begin(115200); // Starts serial communication
-  Serial.println("Programa iniciado, 5 segundos até cálculo de trend");
+  Serial.println("Programa se inicia em 5 segundos");
   delay(5000);
-
-  // Measuring the average accelerometer readings during rest.
-  int i=0;
-  do {
-    acceleration[i] = collectAcc();
-    i++;
-  }while(i<=500); // stops after measuring 500 values]
-  accTrend = trendCalc(500,acceleration);
-  //memset(acceleration,0,sizeof(acceleration)); // resetta todos os valores do array. Nao e necessario, mas...
-
-  Serial.print("Trend calculada:"); Serial.println(accTrend); // For initial test purposes only
 }
 
 void loop(){  
@@ -99,7 +89,7 @@ void compressionCount() {
 }
 
 float depthMeasure() { // To do: moving average of 121 points and detrend the displacement based on that moving average. Calculate amplitude by subtracting the lowest point from the highest point.
-  int timeDelta[accCollectionLimit]={};
+  unsigned long timeDelta[accCollectionLimit]={};
   float acc5PointMovingAvg[accCollectionLimit]={}, accOffset[accCollectionLimit]={};
   float velocity[accCollectionLimit]={},velOffset[accCollectionLimit]={};
   float displacement[accCollectionLimit]={}, disp121PointMovingAvg[accCollectionLimit]={},dispInCentimeters[accCollectionLimit]={};
@@ -113,13 +103,13 @@ float depthMeasure() { // To do: moving average of 121 points and detrend the di
   
   for(int i=1;i<accCollectionLimit;i++) {
     timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
-    accOffset[i]=accOffset[i]-accTrend; // detrends acceleration
+    accOffset[i]=acc5PointMovingAvg[i]-accTrend; // detrends acceleration
   }
   integralCalculator(velocity,accOffset,timeDelta); // Calculates the velocity, which is the integral of the acceleration
 
   velTrend=trendCalc(startingPoint-100,velocity); // Calculates the noise trend in the velocity.
   for(int i=1;i<accCollectionLimit;i++) {
-    velOffset[i]=velOffset[i]-velTrend; // detrends velocity
+    velOffset[i]=velocity[i]-velTrend; // detrends velocity
   }
 
   integralCalculator(displacement,velOffset,timeDelta); // Calculates displacement, which is the integral of the velocity
@@ -133,12 +123,13 @@ float depthMeasure() { // To do: moving average of 121 points and detrend the di
     amplitude[i]=maxValue[i]-minValue[i];
   }
 
-  movingAverage(avgAmplitude,amplitude,250);
+  /* REESCREVER ESSE TRECHO
+  movingAverage(avgAmplitude,amplitude,250); // use starting point as reference of when to start
   double sum=0;
   for(int i=126;i>125 && i<876;i++) { // this is calculating the average amplitude, but only of the points affected by the moving average. 
     sum += avgAmplitude[i];
   }
-  return (sum/751); // 751 comes from the fact the amplitude average calculated right above sums 751 numbers.
+  return (sum/751); // 751 comes from the fact the amplitude average calculated right above sums 751 numbers. */
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -170,35 +161,35 @@ float trendCalc(int stoppingMeasurement, float measurement[]) {
   return trend;
 }
 
-void integralCalculator(float *integral, float *data, int *period) {
-  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+void integralCalculator(float *integral, float *data, unsigned long *period) {
+  int stoppingMeasurement = accCollectionLimit;
 
   integral[stoppingMeasurement]={};
   for(int i=1;i<stoppingMeasurement;i++) {
-    integral[i]=(((data[i-1]+data[i])*(period[i]/1000))/2)+integral[i-1]; // calculates que area between two points (an integral). THe period is divided by 1000 to convert from ms to s
+    integral[i]=((data[i-1]+data[i])*((float)period[i]/1000)/2)+integral[i-1];
   }
 }
 
 void movingAverage(float *avg,float *data,int period) {
-  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
-  float sum=0.0;
+  int stoppingMeasurement = accCollectionLimit;
   int halfPeriod = (period-1)/2;
 
   for(int i=0;i<stoppingMeasurement;i++) {
-    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0 || i+halfPeriod>stoppingMeasurement;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
+    float sum=0.0;
+    for(int j=i-halfPeriod;j<=i+halfPeriod && j>=0 && i+halfPeriod<stoppingMeasurement;j++) { // If j ends up being less than 0, the moving average must not be calculated at all.
       sum += data[j];
     }
     avg[i]= (i+halfPeriod>stoppingMeasurement || i-halfPeriod<0) ? data[i] : sum/period;
   }
 }
 
-void getMax(float *maximum, float *Data,int period) {
-  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+void getMax(float *maximum, float *data,int period) {
+  int stoppingMeasurement = accCollectionLimit;
   int halfPeriod = (period-1)/2;
 
   for(int i=0;i<stoppingMeasurement;i++) {
     float max=0; // the reason max is created every iteration is that so the maxium of one iteration does not carry over to the next one, to avoid that the maximum value detected isn't actually one from a previous iteration that isn't covered by the current one
-    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0;j++) { 
+    for(int j=i-halfPeriod;j<=i+halfPeriod && j>=0 && i+halfPeriod<stoppingMeasurement;j++) {
       if(data[j]>max) {
         max = data[j];
       }
@@ -207,13 +198,13 @@ void getMax(float *maximum, float *Data,int period) {
   }
 }
 
-void getMin(float *mainimum, float *Data,int period) {
-  int stoppingMeasurement = sizeof(data) / sizeof(data[0]); // calculates the size of the array
+void getMin(float *minimum, float *data,int period) {
+  int stoppingMeasurement = accCollectionLimit;
   int halfPeriod = (period-1)/2;
 
   for(int i=0;i<stoppingMeasurement;i++) {
     float min=9999;
-    for(int j=i-halfPeriod;j<=i+halfPeriod || j<=0;j++) { 
+    for(int j=i-halfPeriod;j<=i+halfPeriod && j>=0 && i+halfPeriod<stoppingMeasurement;j++) {
       if(data[j]<min) {
         min = data[j];
       }
