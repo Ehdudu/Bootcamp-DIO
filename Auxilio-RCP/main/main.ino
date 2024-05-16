@@ -13,7 +13,7 @@ unsigned long collectAccTime[accCollectionLimit]={}; // time of collected accele
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
 
 
-// A FAZER: As trends só devem ser calculadas uma vez por programa para permitir que o mesmo rode continuamente. O valor de startingPoint deve ser levado em conta na hora de obter a amplitude do movimento.
+// A FAZER: Checar se PeriodStartCheck é realmente necessário, caso não, apagar startingPoint e usos do mesmo. As trends só devem ser calculadas uma vez por programa para permitir que o mesmo rode continuamente.
 void setup(){
   Wire.begin(); // Starts I2C communication
   Wire.beginTransmission(MPU_addr); 
@@ -88,7 +88,7 @@ void compressionCount() {
 
 }
 
-float depthMeasure() { // To do: moving average of 121 points and detrend the displacement based on that moving average. Calculate amplitude by subtracting the lowest point from the highest point.
+float depthMeasure() { 
   unsigned long timeDelta[accCollectionLimit]={};
   float acc5PointMovingAvg[accCollectionLimit]={}, accOffset[accCollectionLimit]={};
   float velocity[accCollectionLimit]={},velOffset[accCollectionLimit]={};
@@ -123,13 +123,13 @@ float depthMeasure() { // To do: moving average of 121 points and detrend the di
     amplitude[i]=maxValue[i]-minValue[i];
   }
 
-  /* REESCREVER ESSE TRECHO
-  movingAverage(avgAmplitude,amplitude,250); // use starting point as reference of when to start
+  movingAverage(avgAmplitude,amplitude,250);
   double sum=0;
-  for(int i=126;i>125 && i<876;i++) { // this is calculating the average amplitude, but only of the points affected by the moving average. 
+  for(int i=150;i<=(accCollectionLimit-250);i++) { // this is calculating the average amplitude, but only of the points affected by the moving average. Technically, I could've used 125 instead of 150, but i decided to shoot higher for a safe margin
     sum += avgAmplitude[i];
   }
-  return (sum/751); // 751 comes from the fact the amplitude average calculated right above sums 751 numbers. */
+
+  return (sum/(accCollectionLimit-250-150)); // it's the upper condition (accCollectionLimit-250) minus the bottom condition (150). This returns the average amplitude.
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -150,7 +150,7 @@ bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
   return periodStart;
 }
 
-float trendCalc(int stoppingMeasurement, float measurement[]) {
+float trendCalc(int stoppingMeasurement, float *measurement) {
   double sum=0;
   float trend=0;
   for(int i = 0;i<stoppingMeasurement;i++) {

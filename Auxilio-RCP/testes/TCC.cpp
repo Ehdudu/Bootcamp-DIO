@@ -56,7 +56,7 @@ int main(){
 
 
   compressionDepth = depthMeasure();
-  //std::cout<<compressionDepth;
+  std::cout<<compressionDepth;
   return 0;
 }
 
@@ -84,10 +84,7 @@ float depthMeasure() {
   integralCalculator(velocity,accOffset,timeDelta); // validado
   velTrend=trendCalc(startingPoint,velocity); // validado
 
-//  std::cout<<velTrend;
-//  for(int i=0;i<accCollectionLimit;i++) {
-//    std::cout<<i<<" "<<velocity[i]<<"\n";
-//  }
+
 
 
 
@@ -118,20 +115,21 @@ float depthMeasure() {
     amplitude[i]=maxValue[i]-minValue[i];
   }
 
-  for(int i=0;i<accCollectionLimit;i++) {
-    std::cout<<i<<" "<<amplitude[i]<<"\n";
-  }
 
-
-  /* REESCREVER ESTE TRECHO.
   movingAverage(avgAmplitude,amplitude,250);
-  double sum=0;
-  for(int i=126;i>125 && i<876;i++) { // this is calculating the average amplitude, but only of the points affected by the moving average.
-    sum += avgAmplitude[i];
+
+/*  std::cout<<velTrend;
+  for(int i=0;i<accCollectionLimit;i++) {
+    std::cout<<i<<" "<<avgAmplitude[i]<<"\n";
   }*/
 
-  double sum = 0;
-  return (sum/751); // 751 comes from the fact the amplitude average calculated right above sums 751 numbers.
+
+  double sum=0;
+  for(int i=560;i<=(accCollectionLimit-250);i++) { // this is calculating the average amplitude, but only of the points affected by the moving average. Technically, I could've used 125 instead of 150, but i decided to shoot higher for a safe margin
+    sum += avgAmplitude[i];
+  }
+
+  return (sum/(accCollectionLimit-250-560)); // the 300 comes from the fact it's the upper condition (accCollectionLimit-15) minus the bottom condition (150). This returns the average amplitude.
 }
 
 float trendCalc(int stoppingMeasurement, float *measurement) { // checado e ok
