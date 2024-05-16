@@ -3,7 +3,8 @@ const int MPU_addr=0x68; // Accelerometer's I2C address
 const int accCollectionLimit=1000; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
 const int compLimit=25; // defines the amount of compressions necessary for the compression frequency to be calculated
 float acceleration[accCollectionLimit]={}; // acceleration values collected over time.
-float compressionDepth=0; // stores depth of compression 
+float compressionDepth=0; // stores depth of compression
+float accTrend=0, velTrend=0;
 int measurementCounter=0; // used for passing values to the acceleration array
 int compCounter=0; // compCounter tracks amount of compressions made
 int riseCounter=0; // riseCounter is used for tracking the movement of a graph similar to a senoid, being used to identify the moment it stops rising and starts a downwards trend.
@@ -12,8 +13,6 @@ unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instan
 unsigned long collectAccTime[accCollectionLimit]={}; // time of collected acceleration value
 double compFreq=0; // compFreq tracks the average amount of compressions per minute 
 
-
-// A FAZER: Checar se PeriodStartCheck é realmente necessário, caso não, apagar startingPoint e usos do mesmo. As trends só devem ser calculadas uma vez por programa para permitir que o mesmo rode continuamente.
 void setup(){
   Wire.begin(); // Starts I2C communication
   Wire.beginTransmission(MPU_addr); 
@@ -28,7 +27,28 @@ void setup(){
   Wire.endTransmission(true);
 
   Serial.begin(115200); // Starts serial communication
-  Serial.println("Programa se inicia em 5 segundos");
+  Serial.println("Por favor, coloque o acelerometro virado para baixo. O calculo  de trend se inicia em 5 segundos");
+  delay(5000);
+
+  unsigned long timeDelta[500]={};
+  float acc5PointMovingAvg[500]={}, accOffset[500]={}, velocity[500]={};
+
+  for(int i=0;i<500;i++) {
+    acceleration[i]= collectAcc();
+    collectAccTime[i]=millis();
+  }
+
+  movingAverage(acc5PointMovingAvg,acceleration,5); // Calculated a moving average of the acceleration in order to reduce noise
+  accTrend = trendCalc(500,acc5PointMovingAvg); // Calculates the noise trend before compressions start. 100 is an arbitrary value, used so to make sure that the first slope decline isn't included in the trend calculation.
+  for(int i=1;i<500;i++) {
+    timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
+    accOffset[i]=acc5PointMovingAvg[i]-accTrend; // detrends acceleration
+  }
+  integralCalculator(velocity,accOffset,timeDelta); // Calculates the velocity, which is the integral of the acceleration
+  velTrend=trendCalc(500,velocity); // Calculates the noise trend in the velocity.
+
+  Serial.println("Trend calculada."); Serial.println("Aceleracao: ."); Serial.println(accTrend); Serial.println("\nVelocidade: ."); Serial.println(velTrend);
+  Serial.println("\n\nInicie as compressoes");
   delay(5000);
 }
 
@@ -43,7 +63,6 @@ void loop(){
     measurementCounter=0;
     compCounter=0;
     riseCounter=0;
-    startingPoint=0;
   }
   Serial.print(millis()); Serial.print(" ; ");
   Serial.print(acceleration[measurementCounter]); Serial.print(" ; ");
@@ -95,11 +114,9 @@ float depthMeasure() {
   float displacement[accCollectionLimit]={}, disp121PointMovingAvg[accCollectionLimit]={},dispInCentimeters[accCollectionLimit]={};
   float maxValue[accCollectionLimit]={}, minValue[accCollectionLimit]={};
   float amplitude[accCollectionLimit]={}, avgAmplitude[accCollectionLimit]={};
-  float accTrend=0, velTrend=0;
+
 
   movingAverage(acc5PointMovingAvg,acceleration,5); // Calculated a moving average of the acceleration in order to reduce noise
-
-  accTrend = trendCalc(startingPoint-100,acc5PointMovingAvg); // Calculates the noise trend before compressions start. 100 is an arbitrary value, used so to make sure that the first slope decline isn't included in the trend calculation.
   
   for(int i=1;i<accCollectionLimit;i++) {
     timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
@@ -107,7 +124,6 @@ float depthMeasure() {
   }
   integralCalculator(velocity,accOffset,timeDelta); // Calculates the velocity, which is the integral of the acceleration
 
-  velTrend=trendCalc(startingPoint-100,velocity); // Calculates the noise trend in the velocity.
   for(int i=1;i<accCollectionLimit;i++) {
     velOffset[i]=velocity[i]-velTrend; // detrends velocity
   }
@@ -141,9 +157,6 @@ bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
 
   if(newValue>oldValue && riseCounter>3) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
     periodStart = true;
-    if(startingPoint==0) { // This will be used to keep track of when the first compression started, so a trend can be calculated later
-      startingPoint=measurementCounter;
-    }
     riseCounter=0;
   }
 
