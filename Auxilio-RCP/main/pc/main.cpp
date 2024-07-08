@@ -1,97 +1,114 @@
-#include<Wire.h>
-const int MPU_addr=0x68; // Accelerometer's I2C address
-const int accCollectionLimit=1000; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
-const int compLimit=25; // defines the amount of compressions necessary for the compression frequency to be calculated
-float acceleration[accCollectionLimit]={}; // acceleration values collected over time.
-float compressionDepth=0; // stores depth of compression
-float accTrend=0, velTrend=0;
-int measurementCounter=0; // used for passing values to the acceleration array
-int compCounter=0; // compCounter tracks amount of compressions made
-int riseCounter=0; // riseCounter is used for tracking the movement of a graph similar to a senoid, being used to identify the moment it stops rising and starts a downwards trend.
-int startingPoint=0; // This will be used to keep track of when the first compression started, so a trend can be calculated later
-unsigned long compStartTime=0, compEndTime=0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
-unsigned long collectAccTime[accCollectionLimit]={}; // time of collected acceleration value
-double compFreq=0; // compFreq tracks the average amount of compressions per minute 
+#include <iostream>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <chrono> // biblioteca pra gerenciar runtime
+#include <unistd.h> // biblioteca pra função sleep
 
-void setup(){
-  Wire.begin(); // Starts I2C communication
-  Wire.beginTransmission(MPU_addr); 
-  Wire.write(0x6B); 
-  Wire.write(0); // Wakes up the MPU 6050 
-  Wire.endTransmission(true);
+const int accCollectionLimit = 1500; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
+const int compLimit = 25; // defines the amount of compressions necessary for the compression frequency to be calculated
+float acceleration[accCollectionLimit] = {}; // acceleration values collected over time.
+float compressionDepth = 0; // stores depth of compression
+float accTrend = 0, velTrend = 0;
+int measurementCounter = 0; // used for passing values to the acceleration array
+int compCounter = 0; // compCounter tracks amount of compressions made
+int riseCounter = 0; // riseCounter is used for tracking the movement of a graph similar to a senoid, being used to identify the moment it stops rising and starts a downwards trend.
+int startingPoint = 0; // This will be used to keep track of when the first compression started, so a trend can be calculated later
+unsigned long compStartTime = 0, compEndTime = 0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
+unsigned long collectAccTime[accCollectionLimit] = {}; // time of collected acceleration value
+double compFreq = 0; // compFreq tracks the average amount of compressions per minute 
 
-  // Sensor sensitivity config
-  Wire.beginTransmission(MPU_addr);
-  Wire.write(0x1C);                  
-  Wire.write(0x10);                  // Defines the measurement scale as +/- 8g
-  Wire.endTransmission(true);
+unsigned long millis();
+void compressionCount();
+float depthMeasure();
+bool periodStartCheck(float oldValue, float newValue, float detectionTreshold);
+float trendCalc(int stoppingMeasurement, float *measurement);
+void integralCalculator(float *integral, float *data, unsigned long *period, int lastNumber);
+void movingAverage(float *avg, float *data, int period, int lastNumber);
+void getMax(float *maximum, float *data, int period);
+void getMin(float *minimum, float *data, int period);
 
-  Serial.begin(115200); // Starts serial communication
-  Serial.println("Por favor, coloque o acelerometro virado para baixo. O calculo  de trend se inicia em 5 segundos");
-  delay(5000);
-  
-  unsigned long timeDelta[500]={};
-  float acc5PointMovingAvg[500]={}, accOffset[500]={}, velocity[500]={};
+int main() {
+    std::ifstream serial("/dev/ttyACM0");
 
-  for(int i=0;i<500;i++) {
-    acceleration[i]=collectAcc();
-    collectAccTime[i]=millis();
-  }
-  
-  movingAverage(acc5PointMovingAvg,acceleration,5,500); // Calculated a moving average of the acceleration in order to reduce noise
-  
-  accTrend = trendCalc(500,acc5PointMovingAvg); // Calculates the noise trend before compressions start. 100 is an arbitrary value, used so to make sure that the first slope decline isn't included in the trend calculation.
-  for(int i=1;i<500;i++) {
-    timeDelta[i]=collectAccTime[i]-collectAccTime[i-1]; // Calculates time between measurements
-    accOffset[i]=acc5PointMovingAvg[i]-accTrend; // detrends acceleration
-  }
-  delay(5000);
-  for(int i=0;i<500;i++) {
-    Serial.println(acceleration[i]);
-    Serial.println(i);
-  }
-      
-  integralCalculator(velocity,accOffset,timeDelta,500); // Calculates the velocity, which is the integral of the acceleration
-  velTrend=trendCalc(500,velocity); // Calculates the noise trend in the velocity.
-  Serial.println("Trend calculada."); Serial.println("Aceleracao: ."); Serial.println(accTrend); Serial.println("\nVelocidade: ."); Serial.println(velTrend);
-  Serial.println("\n\nInicie as compressoes"); 
-  delay(5000);
+    // Checa se a porta serial é acessível, e encerra o programa caso não seja
+    if (!serial.is_open()) {
+        std::cerr << "Error: Could not open serial port." << std::endl;
+        return 1;
+    }
+    float teste;
+    std::cout << "Attempting to read value from serial..." << std::endl;
+    serial >> teste;
+    std::cout << "Read value from serial: " << teste << std::endl;
+
+    std::cout << "Por favor, coloque o acelerometro virado para baixo. O calculo de trend se inicia em 5 segundos" << std::endl;
+    sleep(5);
+
+    // Cálculo de trend do sensor
+    do {
+        unsigned long timeDelta[1500] = {};
+        float acc5PointMovingAvg[1500] = {}, accOffset[1500] = {}, velocity[1500] = {};
+
+        // Coleta de dados para o cálculo de trend
+        for (int i = 0; i < 1500; i++) {
+            float value;
+            serial  >>  value;
+            if (serial.fail()) {
+                std::cerr << "Error: Failed to read from /dev/ttyACM0" << std::endl;
+                return 1;
+            }
+            acceleration[i] = value;
+            collectAccTime[i] = millis();
+        }
+
+        movingAverage(acc5PointMovingAvg, acceleration, 5, 1500); // Calculated a moving average of the acceleration in order to reduce noise
+        accTrend = trendCalc(1500, acc5PointMovingAvg); // Calculates the noise trend before compressions start.
+
+        for (int i = 1; i < 1500; i++) {
+            timeDelta[i] = collectAccTime[i] - collectAccTime[i - 1]; // Calculates time between measurements
+            accOffset[i] = acc5PointMovingAvg[i] - accTrend; // detrends acceleration
+        }
+
+        integralCalculator(velocity, accOffset, timeDelta, 1500); // Calculates the velocity, which is the integral of the acceleration
+        velTrend = trendCalc(1500, velocity); // Calculates the noise trend in the velocity.
+
+        sleep(2);
+        std::cout << "accTrend:" << accTrend << " velTrend: " << velTrend << std::endl;
+    } while (false);
+
+    std::cout << "Calculo de trend finalizado, programa iniciando" << std::endl;
+    sleep(5);
+
+    while (true) {
+        for (measurementCounter = 0; measurementCounter < accCollectionLimit; measurementCounter++) {
+            float value;
+            serial >> value;
+            if (serial.fail()) {
+                std::cerr << "Error: Failed to read from /dev/ttyACM0" << std::endl;
+                return 1;
+            }
+            acceleration[measurementCounter] = value;
+            collectAccTime[measurementCounter]=millis();
+            compressionCount();
+            std::cout << "Compression Depth: " << compressionDepth << std::endl;
+            std::cout << "Compression Frequence: " << compFreq<< std::endl;
+        }
+
+        compressionDepth = depthMeasure();
+        compCounter=0;
+        riseCounter=0;
+
+        sleep(5);
+    }
+
+    serial.close();
+    return 0;
 }
 
-void loop(){  
-  acceleration[measurementCounter]= collectAcc();
-  collectAccTime[measurementCounter]=millis();
-  compressionCount(); // Tracks compressions based on collected and detrended acceleration values
-
-  if(measurementCounter>=accCollectionLimit) {
-    compressionDepth = depthMeasure();
-    //memset(acceleration,0,sizeof(acceleration)); // não é necessário, mas caso seja...
-    measurementCounter=0;
-    compCounter=0;
-    riseCounter=0;
-  }
-  //Serial.print(millis()); Serial.print(" ; ");
-  //Serial.print(acceleration[measurementCounter]); Serial.print(" ; ");
-  //Serial.print(compFreq); Serial.print(" ; ");
-  //Serial.print(compressionDepth); Serial.print(" ; ");
-
-  measurementCounter++;
-  delay(7);
-}
-
-float collectAcc() {
-  int16_t rawAcc; // Stores acceleration from the sensor
-  float gAcc; // Stores the acceleration in m/s²
-  
-  Wire.beginTransmission(MPU_addr); // Transmission start
-  Wire.write(0x3F); 
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU_addr,2,true); // The only value being collected is the Z acceleration, so only 2 registers are read
-  rawAcc=Wire.read()<<8|Wire.read(); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-
-  gAcc=(rawAcc/4096.0)*9.80665; 
-  
-  return gAcc;
+unsigned long millis() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
 void compressionCount() {
