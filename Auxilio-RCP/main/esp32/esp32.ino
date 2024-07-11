@@ -17,7 +17,7 @@ void setup(){
   Wire.write(0x10);                  // Defines the measurement scale as +/- 8g
   Wire.endTransmission(true);
 
-  Serial.begin(115200);
+  Serial.begin(9600);
 }
 
 void loop(){  

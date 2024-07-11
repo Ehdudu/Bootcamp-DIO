@@ -5,6 +5,7 @@
 #include <string>
 #include <chrono> // biblioteca pra gerenciar runtime
 #include <unistd.h> // biblioteca pra função sleep
+using namespace std;
 
 const int accCollectionLimit = 1500; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
 const int compLimit = 25; // defines the amount of compressions necessary for the compression frequency to be calculated
@@ -31,16 +32,13 @@ void getMin(float *minimum, float *data, int period);
 
 int main() {
     std::ifstream serial("/dev/ttyACM0");
-
+    ofstream outputFile("/home/marshmelio/Projetos-Pessoais/Auxilio-RCP/testes/output.csv");
     // Checa se a porta serial é acessível, e encerra o programa caso não seja
     if (!serial.is_open()) {
         std::cerr << "Error: Could not open serial port." << std::endl;
         return 1;
     }
     float teste;
-    std::cout << "Attempting to read value from serial..." << std::endl;
-    serial >> teste;
-    std::cout << "Read value from serial: " << teste << std::endl;
 
     std::cout << "Por favor, coloque o acelerometro virado para baixo. O calculo de trend se inicia em 5 segundos" << std::endl;
     sleep(5);
@@ -60,6 +58,7 @@ int main() {
             }
             acceleration[i] = value;
             collectAccTime[i] = millis();
+            outputFile <<  acceleration[i] << ";" << collectAccTime[i] << endl;
         }
 
         movingAverage(acc5PointMovingAvg, acceleration, 5, 1500); // Calculated a moving average of the acceleration in order to reduce noise
@@ -79,8 +78,11 @@ int main() {
 
     std::cout << "Calculo de trend finalizado, programa iniciando" << std::endl;
     sleep(5);
+    std::cout << "Programa iniciado" << std::endl;
 
-    while (true) {
+
+    bool condTemp = true;
+    while (condTemp) {
         for (measurementCounter = 0; measurementCounter < accCollectionLimit; measurementCounter++) {
             float value;
             serial >> value;
@@ -90,18 +92,18 @@ int main() {
             }
             acceleration[measurementCounter] = value;
             collectAccTime[measurementCounter]=millis();
+            outputFile <<  acceleration[measurementCounter] << ";" << collectAccTime[measurementCounter] << endl;
             compressionCount();
-            std::cout << acceleration[measurementCounter] << std::endl;
-            std::cout << "Compression Depth: " << compressionDepth << std::endl;
             std::cout << "Compression Frequence: " << compFreq<< std::endl;
         }
-
+        outputFile.close();
         compressionDepth = depthMeasure();
         compCounter=0;
         riseCounter=0;
 
-        sleep(5);
+        condTemp = false;
     }
+    std::cout << "Compression Depth: " << compressionDepth << std::endl;
 
     serial.close();
     return 0;
