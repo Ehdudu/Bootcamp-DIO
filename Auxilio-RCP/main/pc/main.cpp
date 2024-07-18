@@ -1,13 +1,11 @@
 #include <iostream>
-#include <cstdlib>
 #include <fstream>
-#include <sstream>
-#include <string>
 #include <chrono> // biblioteca pra gerenciar runtime
 #include <unistd.h> // biblioteca pra função sleep
 
+
 const int accCollectionLimit = 1500; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
-const int compLimit = 25; // defines the amount of compressions necessary for the compression frequency to be calculated
+const int compLimit = 15; // defines the amount of compressions necessary for the compression frequency to be calculated
 float acceleration[accCollectionLimit] = {}; // acceleration values collected over time.
 float compressionDepth = 0; // stores depth of compression
 float accTrend = 0, velTrend = 0;
@@ -18,6 +16,7 @@ int startingPoint = 0; // This will be used to keep track of when the first comp
 unsigned long compStartTime = 0, compEndTime = 0; // compStartTime tracks the instant of time of the first compression, compEndTime tracks the instant of time after a specific number of compressions defined on compressionCount()
 unsigned long collectAccTime[accCollectionLimit] = {}; // time of collected acceleration value
 double compFreq = 0; // compFreq tracks the average amount of compressions per minute 
+bool currentPeriod=false;
 
 unsigned long millis();
 void compressionCount();
@@ -30,20 +29,9 @@ void getMax(float *maximum, float *data, int period);
 void getMin(float *minimum, float *data, int period);
 
 int main() {
-    std::ifstream serial("/dev/ttyACM0");
-
-    // Checa se a porta serial é acessível, e encerra o programa caso não seja
-    if (!serial.is_open()) {
-        std::cerr << "Error: Could not open serial port." << std::endl;
-        return 1;
-    }
-    float teste;
-    std::cout << "Attempting to read value from serial..." << std::endl;
-    serial >> teste;
-    std::cout << "Read value from serial: " << teste << std::endl;
-
     std::cout << "Por favor, coloque o acelerometro virado para baixo. O calculo de trend se inicia em 5 segundos" << std::endl;
     sleep(5);
+    std::ifstream serial("/dev/ttyACM0");
 
     // Cálculo de trend do sensor
     do {
@@ -60,7 +48,9 @@ int main() {
             }
             acceleration[i] = value;
             collectAccTime[i] = millis();
+            usleep(7000);
         }
+        serial.close(); // fecha a porta serial para que nao acumulem dados antigos nela que interfiram nas proximas coletas.
 
         movingAverage(acc5PointMovingAvg, acceleration, 5, 1500); // Calculated a moving average of the acceleration in order to reduce noise
         accTrend = trendCalc(1500, acc5PointMovingAvg); // Calculates the noise trend before compressions start.
@@ -81,6 +71,7 @@ int main() {
     sleep(5);
 
     while (true) {
+        serial.open("/dev/ttyACM0");
         for (measurementCounter = 0; measurementCounter < accCollectionLimit; measurementCounter++) {
             float value;
             serial >> value;
@@ -91,11 +82,11 @@ int main() {
             acceleration[measurementCounter] = value;
             collectAccTime[measurementCounter]=millis();
             compressionCount();
-            std::cout << acceleration[measurementCounter] << std::endl;
             std::cout << "Compression Depth: " << compressionDepth << std::endl;
             std::cout << "Compression Frequence: " << compFreq<< std::endl;
+            usleep(7000);
         }
-
+        serial.close(); // fecha a porta sempre que as coletas terminaram para nao acumular dados antigos
         compressionDepth = depthMeasure();
         compCounter=0;
         riseCounter=0;
@@ -154,7 +145,7 @@ float depthMeasure() {
 
   integralCalculator(displacement,velOffset,timeDelta,accCollectionLimit); // Calculates displacement, which is the integral of the velocity
   movingAverage(disp121PointMovingAvg,displacement,121,accCollectionLimit);
-  for(int i=0;i<accCollectionLimit;i++) {
+  for(int i=1;i<accCollectionLimit;i++) {
     dispInCentimeters[i]=(displacement[i]-disp121PointMovingAvg[i])*100;
   }
   getMax(maxValue,dispInCentimeters,61);
@@ -177,10 +168,13 @@ bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
 
   if(newValue<oldValue && abs(newValue)>detectionTreshold) { // Tracks movement as long as the collected value is higher than the defined treshold
     riseCounter++;
+  } else if (newValue>oldValue) {
+    currentPeriod=false;
   }
 
-  if(newValue>oldValue && riseCounter>3) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
+  if(newValue>oldValue && riseCounter>2 && !currentPeriod) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
     periodStart = true;
+    currentPeriod=true;
     riseCounter=0;
   }
 

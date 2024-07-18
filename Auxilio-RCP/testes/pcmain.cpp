@@ -1,11 +1,8 @@
 #include <iostream>
-#include <cstdlib>
 #include <fstream>
-#include <sstream>
-#include <string>
 #include <chrono> // biblioteca pra gerenciar runtime
 #include <unistd.h> // biblioteca pra função sleep
-using namespace std;
+
 
 const int accCollectionLimit = 1500; // Defines a hard cap used for resetting the acceleration array once it reaches its limit. 1000 points = +-25 compressions
 const int compLimit = 25; // defines the amount of compressions necessary for the compression frequency to be calculated
@@ -31,18 +28,9 @@ void getMax(float *maximum, float *data, int period);
 void getMin(float *minimum, float *data, int period);
 
 int main() {
-    std::ifstream serial("/dev/ttyACM0");
-    ofstream outputFile("/home/marshmelio/Projetos-Pessoais/Auxilio-RCP/testes/output.csv");
-    // Checa se a porta serial é acessível, e encerra o programa caso não seja
-    if (!serial.is_open()) {
-        std::cerr << "Error: Could not open serial port." << std::endl;
-        return 1;
-    }
-    float teste;
-
     std::cout << "Por favor, coloque o acelerometro virado para baixo. O calculo de trend se inicia em 5 segundos" << std::endl;
     sleep(5);
-
+    std::ifstream serial("/dev/ttyACM0");
     // Cálculo de trend do sensor
     do {
         unsigned long timeDelta[1500] = {};
@@ -50,6 +38,7 @@ int main() {
 
         // Coleta de dados para o cálculo de trend
         for (int i = 0; i < 1500; i++) {
+
             float value;
             serial  >>  value;
             if (serial.fail()) {
@@ -58,9 +47,12 @@ int main() {
             }
             acceleration[i] = value;
             collectAccTime[i] = millis();
-            outputFile <<  acceleration[i] << ";" << collectAccTime[i] << endl;
+            std::cout <<  acceleration[i] << ";" << collectAccTime[i] <<  std::endl;
+            usleep(7000);
         }
+        serial.close(); // fecha a porta serial para que nao acumulem dados antigos nela que interfiram nas proximas coletas.
 
+        //Inicio dos calculos
         movingAverage(acc5PointMovingAvg, acceleration, 5, 1500); // Calculated a moving average of the acceleration in order to reduce noise
         accTrend = trendCalc(1500, acc5PointMovingAvg); // Calculates the noise trend before compressions start.
 
@@ -76,13 +68,15 @@ int main() {
         std::cout << "accTrend:" << accTrend << " velTrend: " << velTrend << std::endl;
     } while (false);
 
+
     std::cout << "Calculo de trend finalizado, programa iniciando" << std::endl;
     sleep(5);
     std::cout << "Programa iniciado" << std::endl;
 
-
+    std::ofstream outFile("compFreq.csv");
     bool condTemp = true;
     while (condTemp) {
+        serial.open("/dev/ttyACM0");
         for (measurementCounter = 0; measurementCounter < accCollectionLimit; measurementCounter++) {
             float value;
             serial >> value;
@@ -92,20 +86,20 @@ int main() {
             }
             acceleration[measurementCounter] = value;
             collectAccTime[measurementCounter]=millis();
-            outputFile <<  acceleration[measurementCounter] << ";" << collectAccTime[measurementCounter] << endl;
+            std::cout <<  acceleration[measurementCounter] << ";" << collectAccTime[measurementCounter] << std::endl;
             compressionCount();
-            std::cout << "Compression Frequence: " << compFreq<< std::endl;
+            outFile << compFreq<< std::endl;
+            usleep(7000);
         }
-        outputFile.close();
+        serial.close(); // fecha a porta sempre que as coletas terminaram para nao acumular dados antigos
         compressionDepth = depthMeasure();
         compCounter=0;
         riseCounter=0;
 
         condTemp = false;
     }
+    outFile.close();
     std::cout << "Compression Depth: " << compressionDepth << std::endl;
-
-    serial.close();
     return 0;
 }
 
@@ -156,7 +150,7 @@ float depthMeasure() {
 
   integralCalculator(displacement,velOffset,timeDelta,accCollectionLimit); // Calculates displacement, which is the integral of the velocity
   movingAverage(disp121PointMovingAvg,displacement,121,accCollectionLimit);
-  for(int i=0;i<accCollectionLimit;i++) {
+  for(int i=1;i<accCollectionLimit;i++) {
     dispInCentimeters[i]=(displacement[i]-disp121PointMovingAvg[i])*100;
   }
   getMax(maxValue,dispInCentimeters,61);
@@ -171,7 +165,7 @@ float depthMeasure() {
     sum += avgAmplitude[i];
   }
 
-  return (sum/(accCollectionLimit-250-250)); // it's the upper condition (accCollectionLimit-250) minus the bottom condition (150). This returns the average amplitude.
+  return (sum/(accCollectionLimit-250-250)); // it's the upper condition (accCollectionLimit-250) minus the bottom condition (250). This returns the average amplitude.
 }
 
 bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
@@ -181,7 +175,7 @@ bool periodStartCheck(float oldValue, float newValue, float detectionTreshold) {
     riseCounter++;
   }
 
-  if(newValue>oldValue && riseCounter>3) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
+  if(newValue>oldValue && riseCounter>1) { // Tracks the lowest point of a "senoid" by looking for the moment it stops the upwards trend and starts a downwards one.
     periodStart = true;
     riseCounter=0;
   }

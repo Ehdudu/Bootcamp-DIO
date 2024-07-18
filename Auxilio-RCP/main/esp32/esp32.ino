@@ -33,5 +33,5 @@ void loop(){
   gAcc=(rawAcc/4096.0)*9.80665;
 
   Serial.println(gAcc);
-  delay(7);
+  delay(1);
 }
