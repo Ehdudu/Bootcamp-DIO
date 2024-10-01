@@ -1,7 +1,0 @@
-Por favor, coloque o acelerometro virado para baixo. O calculo de trend se inicia em 5 segundos
-
-accTrend:-9.79204 velTrend: -0.054443
-Calculo de trend finalizado, programa iniciando
-Programa iniciado
-
-Compression Depth: 8.11614
